@@ -19,7 +19,7 @@ The .mmd files can be inserted directly into markdown and be rendered on i.e. Gi
 
 <!-- ![image info](./example/dabs_visualization.png) -->
 
-![image info](./example-advanced\figures\dabs_visualization_dev.png)
+![image info](./example-advanced/figures/dabs_visualization_dev.png)
 
 
 ### Mermaid example (rendered directly in markdown): 
