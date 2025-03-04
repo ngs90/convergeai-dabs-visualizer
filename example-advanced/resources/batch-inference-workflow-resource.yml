@@ -1,0 +1,40 @@
+new_cluster: &new_cluster
+  new_cluster:
+    num_workers: ${var.num_workers}
+    spark_version: 13.3.x-cpu-ml-scala2.12
+    node_type_id: ${var.cluster_size}
+    custom_tags:
+      clusterSource: mlops-stack/0.2
+
+permissions: &permissions
+  permissions:
+    - level: CAN_VIEW
+      group_name: users
+
+resources:
+  jobs:
+    batch_inference_job:
+      name: ${bundle.target}-mlops_stacks-batch-inference-job
+      job_clusters:
+        - job_cluster_key: batch_inference_job_cluster
+          <<: *new_cluster
+      tasks:
+        - task_key: batch_inference_job
+          job_cluster_key: batch_inference_job_cluster
+          notebook_task:
+            notebook_path: ../deployment/batch_inference/notebooks/BatchInference.py
+            base_parameters:
+              env: ${bundle.target}
+              input_table_name: taxi_scoring_sample  # TODO: create input table for inference
+              output_table_name: ${bundle.target}.my-mlops-project.predictions
+              model_name: ${bundle.target}.my-mlops-project.${var.model_name}
+              git_source_info: url:${bundle.git.origin_url}; branch:${bundle.git.branch}; commit:${bundle.git.commit}
+
+      schedule:
+        quartz_cron_expression: "0 0 11 * * ?" # daily at 11am
+        timezone_id: UTC
+      <<: *permissions
+      email_notifications:
+         on_failure:
+           - first@company.com
+           - second@company.com

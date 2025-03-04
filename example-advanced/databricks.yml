@@ -1,0 +1,55 @@
+# The name of the bundle. run `databricks bundle schema` to see the full bundle settings schema.
+bundle:
+  name: mlops_stacks
+
+variables:
+  experiment_name:
+    description: Experiment name for the model training.
+    default: /Users/${workspace.current_user.userName}/${bundle.target}-mlops_stacks-experiment
+  model_name:
+    description: Model name for the model training.
+    default: mlops_stacks-model
+  cluster_size:
+    description: Node instance type of cluster 
+  num_workers: 
+    description: Number of works of cluster 
+    default: 1
+
+include:
+  - ./resources/*.yml
+
+# Deployment Target specific values for workspace
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      # TODO: add dev workspace URL
+      host: https://adb-xxxx.xx.azuredatabricks.net
+    variables: 
+      cluster_size: m7g.large
+      num_workers: 1
+
+  staging:
+    mode: development 
+    workspace:
+      host: https://adb-xxxx.xx.azuredatabricks.net
+    variables: 
+      cluster_size: m7g.large
+      num_workers: 2
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-xxxx.xx.azuredatabricks.net
+    variables: 
+      cluster_size: m7g.xlarge
+      num_workers: 3
+
+  test:
+    workspace:
+      host: https://adb-xxxx.xx.azuredatabricks.net
+    variables: 
+      cluster_size: m7g.large
+      num_workers: 3
+
