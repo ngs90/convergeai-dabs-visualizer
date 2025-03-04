@@ -3,10 +3,9 @@
 dabsVisualizer: A CLI tool to generate UML diagrams from Databricks YAML asset bundle definitions.
 
 Changes from the previous version:
-- Creates one PNG file per environment.
-- Handles multiple jobs from multiple resource files, each with its own tasks and clusters.
-- Merges duplicate job definitions by combining their clusters and tasks so that clusters defined in two or more resource files are all shown.
-- The overall structure remains the same (Jobs -> Job -> Workflow subpackage for tasks).
+- Added support for Mermaid as an alternative diagram generation language
+- Added --type parameter to choose between PlantUML and Mermaid diagram generation
+- Default diagram type is now Mermaid
 """
 
 import sys
@@ -18,8 +17,6 @@ import subprocess
 import tempfile
 import shutil
 import json
-
-
 
 def load_bundle_yaml(main_yaml_path):
     """
@@ -50,8 +47,6 @@ def load_bundle_yaml(main_yaml_path):
                 if not resource_yaml:
                     continue
 
-                #print('resource_yaml', resource_yaml)
-
                 resources = resource_yaml.get("resources", {})
                 for resource_type, items in resources.items():
                     if resource_type not in all_resources:
@@ -70,7 +65,6 @@ def load_bundle_yaml(main_yaml_path):
                                 if "job_clusters" not in existing:
                                     existing["job_clusters"] = []
                                 for new_cluster in value["job_clusters"]:
-                                    print('add cluster')
                                     new_key = new_cluster.get("job_cluster_key")
                                     duplicate = False
                                     for existing_cluster in existing["job_clusters"]:
@@ -89,10 +83,6 @@ def load_bundle_yaml(main_yaml_path):
 def build_plantuml_for_target(bundle_name, resources, target_name, target_data):
     """
     Builds a PlantUML diagram (as text) for a single environment/target.
-    - One top-level package named after the environment (with mode/host).
-    - A "Jobs" subpackage containing each job.
-    - Inside each job, a "Workflow" subpackage with tasks.
-    - Clusters shown and linked to the job.
     """
     target_mode = target_data.get("mode", "unknown")
     workspace = target_data.get("workspace", {})
@@ -155,8 +145,6 @@ def build_plantuml_for_target(bundle_name, resources, target_name, target_data):
                 else:
                     task_label = task_key
                 lines.append(f'      package "{task_label}" as {task_alias} {{')
-                # Uncomment if you want to show arrow from job to each task:
-                # lines.append(f'      {job_alias} --> {task_alias} : contains')
                 depends_on = task.get("depends_on", [])
                 for dep_item in depends_on:
                     dep_key = dep_item.get("task_key")
@@ -166,19 +154,12 @@ def build_plantuml_for_target(bundle_name, resources, target_name, target_data):
                 
                 base_parameters = task.get("notebook_task", {}).get("base_parameters", {})
                 if base_parameters:
-
-                    print(base_parameters)
-                    print(task.keys())
-                    print(task)
-
                     parameter_alias = f'parameters_{task_alias}'
-                    # lines.append(f'      package "Parameters" as {parameter_alias} {{')
                     param_vals = ""
                     for param, val in base_parameters.items():
-                        param_vals += f"{param}\\n" # Can also add the value: {val}\\n "
+                        param_vals += f"{param}\\n"
                     param_vals = param_vals.strip()
                     
-                    print(param_vals)
                     lines.append(f'        rectangle "{param_vals}" as {param}_{parameter_alias}')
                 lines.append("      }") # end Task
 
@@ -205,6 +186,100 @@ def build_plantuml_for_target(bundle_name, resources, target_name, target_data):
 
     lines.append("}")  # end top-level package for this environment
     lines.append("@enduml")
+    return "\n".join(lines)
+
+def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
+    """
+    Builds a Mermaid diagram (as text) for a single environment/target.
+    """
+    target_mode = target_data.get("mode", "unknown")
+    workspace = target_data.get("workspace", {})
+    workspace_host = workspace.get("host", "unknown")
+
+    # Start the Mermaid diagram
+    lines = []
+    lines.append("---")
+    lines.append("title: " + f"{bundle_name} - {target_name} (mode: {target_mode})")
+    lines.append("---")
+    lines.append("graph TD")
+
+    if "jobs" in resources:
+        for job_id, job_data in resources["jobs"].items():
+            job_name = job_data.get("name", job_id)
+
+            # Trigger info
+            trigger_str = ""
+            trigger_def = job_data.get("trigger", {})
+            if "periodic" in trigger_def:
+                interval = trigger_def["periodic"].get("interval", "")
+                unit = trigger_def["periodic"].get("unit", "")
+                trigger_str = f"\\nTrigger: {interval} {unit}"
+
+            # Notifications
+            email_notifications = job_data.get("email_notifications", {})
+            notify_str = ""
+            for notif_type, recipients in email_notifications.items():
+                notify_str += f"\\nNotify {notif_type}: {', '.join(recipients)}"
+
+            job_label = f"{job_name}{trigger_str}{notify_str}"
+            job_id_safe = job_id.replace("-", "_")
+
+            # Create job node
+            lines.append(f'    job_{job_id_safe}["{job_label}"]')
+
+            # Show tasks
+            tasks = job_data.get("tasks", [])
+            for task in tasks:
+                task_key = task.get("task_key")
+                if not task_key:
+                    continue
+                task_key_safe = task_key.replace("-", "_")
+
+                # Task type
+                if "notebook_task" in task:
+                    task_label = f"{task_key} (notebook)"
+                elif "python_wheel_task" in task:
+                    task_label = f"{task_key} (python_wheel)"
+                else:
+                    task_label = task_key
+
+                # Create task node
+                lines.append(f'    task_{job_id_safe}_{task_key_safe}["{task_label}"]')
+
+                # Link job to task
+                lines.append(f'    job_{job_id_safe} --> task_{job_id_safe}_{task_key_safe}')
+
+                # Handle task dependencies
+                depends_on = task.get("depends_on", [])
+                for dep_item in depends_on:
+                    dep_key = dep_item.get("task_key")
+                    if dep_key:
+                        dep_key_safe = dep_key.replace("-", "_")
+                        lines.append(f'    task_{job_id_safe}_{dep_key_safe} --> task_{job_id_safe}_{task_key_safe}')
+
+                # Add base parameters as a node
+                base_parameters = task.get("notebook_task", {}).get("base_parameters", {})
+                if base_parameters:
+                    param_vals = "\\n".join([f"{param}" for param in base_parameters.keys()])
+                    lines.append(f'    params_{job_id_safe}_{task_key_safe}["{param_vals}"]')
+                    lines.append(f'    task_{job_id_safe}_{task_key_safe} --> params_{job_id_safe}_{task_key_safe}')
+
+            # Show job clusters
+            job_clusters = job_data.get("job_clusters", [])
+            for cluster in job_clusters:
+                cluster_key = cluster.get("job_cluster_key")
+                if cluster_key:
+                    new_cluster = cluster.get("new_cluster", {})
+                    spark_version = new_cluster.get("spark_version", "")
+                    node_type_id = new_cluster.get("node_type_id", "")
+                    runtime_engine = new_cluster.get("runtime_engine", "")
+                    cluster_label = (
+                        f"Cluster: {cluster_key}\\n"
+                        f"{spark_version}, {node_type_id}, {runtime_engine}"
+                    )
+                    lines.append(f'    cluster_{job_id_safe}["{cluster_label}"]')
+                    lines.append(f'    job_{job_id_safe} --> cluster_{job_id_safe}')
+
     return "\n".join(lines)
 
 def run_plantuml(puml_content, output_file):
@@ -243,6 +318,34 @@ def run_plantuml(puml_content, output_file):
         if os.path.exists(tmp_name):
             os.remove(tmp_name)
 
+def run_mermaid(mermaid_content, output_file):
+    """
+    Uses the Mermaid CLI to convert Mermaid source to PNG.
+    Requires mermaid-cli to be installed.
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mmd") as tmp:
+        tmp_name = tmp.name
+        tmp.write(mermaid_content.encode("utf-8"))
+    
+    try:
+        result = subprocess.run(
+            ["mmdc", "-i", tmp_name, "-o", os.path.abspath(output_file), "-t", "dark"],
+            capture_output=True,
+            text=True
+        )
+        if result .returncode != 0:
+            print("[ERROR] Mermaid CLI execution failed:")
+            print("stdout:", result.stdout)
+            print("stderr:", result.stderr)
+            return
+
+        print(f"[INFO] PNG generated at: {os.path.abspath(output_file)}")
+    except Exception as e:
+        print(f"[ERROR] Exception during Mermaid CLI execution: {e}")
+    finally:
+        if os.path.exists(tmp_name):
+            os.remove(tmp_name)
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate UML visualization from Databricks YAML asset bundle definitions. One PNG per environment."
@@ -251,12 +354,17 @@ def main():
         "-i", "--input", 
         help="Path to databricks.yml file", 
         default="databricks.yml"
-        # required=True
     )
     parser.add_argument(
         "-o", "--output", 
         help="Base name for output files (default: dabs_visualization). Each environment's file will be named <base>_<env>.png/.puml",
         default="figures/dabs_visualization"
+    )
+    parser.add_argument(
+        "-t", "--type", 
+        help="Diagram generation type (default: mermaid). Options: mermaid, plantuml",
+        default="mermaid",
+        choices=["mermaid", "plantuml"]
     )
     args = parser.parse_args()
 
@@ -277,7 +385,7 @@ def main():
             data_str = data_str.replace(k, str(v))
         return json.loads(data_str)
 
-    # For each environment/target, build a separate .puml and .png
+    # For each environment/target, build a separate .puml/.mmd and .png
     for target_name, target_data in targets.items():
 
         replacements = {r'${bundle.target}': target_name}
@@ -287,20 +395,29 @@ def main():
         target_data_resolved = resolve_replacements(target_data, variable_replacements | replacements)
         resources_resolved = resolve_replacements(resources, variable_replacements | replacements)
 
-        puml_content = build_plantuml_for_target(bundle_name, resources_resolved, target_name, target_data_resolved)
+        # Choose diagram generation method based on type
+        if args.type == "plantuml":
+            diagram_content = build_plantuml_for_target(bundle_name, resources_resolved, target_name, target_data_resolved)
+            file_ext = "puml"
+            render_func = run_plantuml
+        else:  # mermaid (default)
+            diagram_content = build_mermaid_for_target(bundle_name, resources_resolved, target_name, target_data_resolved)
+            file_ext = "mmd"
+            render_func = run_mermaid
 
-        puml_file = f"{args.output}/puml/{target_name}.puml"
+        # Generate source file paths
+        source_file = f"{args.output}/source/{target_name}.{file_ext}"
         png_file = f"{args.output}_{target_name}.png"
 
-        # Save the PUML file
-        os.makedirs(os.path.dirname(puml_file), exist_ok=True)
-        with open(puml_file, "w", encoding="utf-8") as f:
-            f.write(puml_content)
-        print(f"[INFO] PlantUML source saved to: {os.path.abspath(puml_file)}")
+        # Save the source file
+        os.makedirs(os.path.dirname(source_file), exist_ok=True)
+        with open(source_file, "w", encoding="utf-8") as f:
+            f.write(diagram_content)
+        print(f"[INFO] Diagram source saved to: {os.path.abspath(source_file)}")
         
-        # Render the UML diagram
-        run_plantuml(puml_content, png_file)
-        print(f"[INFO] Generated UML diagram for environment '{target_name}': {os.path.abspath(png_file)}")
+        # Render the diagram
+        render_func(diagram_content, png_file)
+        print(f"[INFO] Generated diagram for environment '{target_name}': {os.path.abspath(png_file)}")
 
 if __name__ == "__main__":
     main()
