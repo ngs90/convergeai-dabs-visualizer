@@ -187,33 +187,53 @@ def build_plantuml_for_target(bundle_name, resources, target_name, target_data):
     lines.append("}")  # end top-level package for this environment
     lines.append("@enduml")
     return "\n".join(lines)
+
+def sanitize_label(label):
+    """
+    Sanitize label for Mermaid diagram by escaping special characters
+    and ensuring it's valid for Mermaid syntax.
+    """
+    # Replace newlines with spaces
+    label = label.replace('\n', ' ')
+    
+    # Escape quotes
+    label = label.replace('"', '\\"')
+    
+    return label
+
 def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
     """
-    Builds a Mermaid diagram (as text) for a single environment/target,
-    mimicking the structure of the provided PlantUML diagram.
+    Builds an improved Mermaid diagram with enhanced readability and styling
     """
     target_mode = target_data.get("mode", "unknown")
     workspace = target_data.get("workspace", {})
     workspace_host = workspace.get("host", "unknown")
 
-    # Start the Mermaid diagram
+    # Start the Mermaid diagram with improved styling
     lines = []
     lines.append("---")
-    lines.append(f"title {bundle_name} ({target_name} mode {target_mode})")
+    lines.append(f"title {sanitize_label(f'{bundle_name} ({target_name} mode {target_mode})')}")
     lines.append(f"host {workspace_host}")
     lines.append("---")
     lines.append("flowchart LR")
-    lines.append("    classDef default fill:#f9f,stroke:#333,stroke-width:2px;")
+    
+    # Define custom styles for better differentiation
+    lines.append("    %% Custom style definitions")
+    lines.append("    classDef jobNode fill:#2C3E50,color:#FFFFFF,stroke:#1A5276,stroke-width:2px;")
+    lines.append("    classDef workflowNode fill:#34495E,color:#ECF0F1,stroke:#2980B9,stroke-width:1px;")
+    lines.append("    classDef taskNode fill:#5D6D7E,color:#FFFFFF,stroke:#2874A6,stroke-width:1px;")
+    lines.append("    classDef clusterNode fill:#7F8C8D,color:#FFFFFF,stroke:#566573,stroke-width:1px;")
+    lines.append("    classDef paramNode fill:#566573,color:#E5E7E9,stroke:#2C3E50,stroke-dasharray:5;")
     lines.append("")
     
     # Create the main container for the environment
-    lines.append(f"    subgraph {target_name}[\" \"]")
-    lines.append("    direction LR")
+    lines.append(f"    subgraph {target_name}[\" {target_name} Environment \"]")
+    lines.append("    direction TB")
     lines.append("")
     
     # Jobs subgraph
     lines.append("    subgraph Jobs")
-    lines.append("    direction LR")
+    lines.append("    direction TB")
     
     if "jobs" in resources:
         for job_id, job_data in resources["jobs"].items():
@@ -226,21 +246,21 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
             if "periodic" in trigger_def:
                 interval = trigger_def["periodic"].get("interval", "")
                 unit = trigger_def["periodic"].get("unit", "")
-                trigger_str = f"trigger: periodic ({interval} {unit})"
+                trigger_str = f"Trigger: {interval} {unit}"
 
             # Notifications
             email_notifications = job_data.get("email_notifications", {})
             notify_str = ""
             for notif_type, recipients in email_notifications.items():
-                notify_str += f"\\nnotify {notif_type}: {', '.join(recipients)}"
+                notify_str += f" Notify {notif_type}: {', '.join(recipients)}"
 
-            # Job node
-            job_label = f"{job_name}\\n{trigger_str}{notify_str}"
-            lines.append(f'    {job_id_safe}["{job_label}"]')
+            # Job node with comprehensive label
+            job_label = sanitize_label(f"{job_name} {trigger_str}{notify_str}")
+            lines.append(f'    {job_id_safe}("{job_label}"):::jobNode')
 
             # Workflow subgraph
             lines.append(f"    subgraph Workflow_{job_id_safe}[Workflow]")
-            lines.append("    direction LR")
+            lines.append("    direction TB")
 
             # Tasks
             tasks = job_data.get("tasks", [])
@@ -251,26 +271,26 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
                     continue
                 task_key_safe = task_key.replace("-", "_")
 
-                # Determine task type
+                # Determine task type with more descriptive labeling
                 if "notebook_task" in task:
-                    task_label = f"{task_key} (notebook)"
+                    task_label = sanitize_label(f"{task_key} (Notebook Task)")
                 elif "python_wheel_task" in task:
-                    task_label = f"{task_key} (python_wheel)"
+                    task_label = sanitize_label(f"{task_key} (Python Wheel Task)")
                 else:
-                    task_label = task_key
+                    task_label = sanitize_label(f"{task_key} (Generic Task)")
 
                 # Task node
                 task_nodes.append(task_key_safe)
-                lines.append(f'    {task_key_safe}["{task_label}"]')
+                lines.append(f'    {task_key_safe}("{task_label}"):::taskNode')
 
-                # Base parameters
+                # Base parameters with improved visualization
                 base_parameters = task.get("notebook_task", {}).get("base_parameters", {})
                 if base_parameters:
-                    param_str = "\\n".join(base_parameters.keys())
-                    lines.append(f'    {task_key_safe}_params["{param_str}"]')
+                    param_str = sanitize_label("Parameters: " + ", ".join(base_parameters.keys()))
+                    lines.append(f'    {task_key_safe}_params("{param_str}"):::paramNode')
                     lines.append(f'    {task_key_safe} --> {task_key_safe}_params')
 
-            # Task dependencies
+            # Task dependencies with clearer connections
             for task in tasks:
                 task_key = task.get("task_key")
                 if not task_key:
@@ -286,7 +306,7 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
 
             lines.append("    end")  # End Workflow subgraph
 
-            # Job Clusters
+            # Job Clusters with enhanced visualization
             job_clusters = job_data.get("job_clusters", [])
             for cluster in job_clusters:
                 cluster_key = cluster.get("job_cluster_key")
@@ -296,12 +316,14 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
                     node_type_id = new_cluster.get("node_type_id", "")
                     runtime_engine = new_cluster.get("runtime_engine", "")
                     
-                    cluster_label = (
-                        f"Cluster: {cluster_key}\\n"
-                        f"{spark_version}, {node_type_id}, {runtime_engine}"
+                    cluster_label = sanitize_label(
+                        f"Cluster: {cluster_key} "
+                        f"Spark: {spark_version} "
+                        f"Nodes: {node_type_id} "
+                        f"Runtime: {runtime_engine}"
                     )
                     cluster_id_safe = f"cluster_{job_id_safe}"
-                    lines.append(f'    {cluster_id_safe}["{cluster_label}"]')
+                    lines.append(f'    {cluster_id_safe}("{cluster_label}"):::clusterNode')
                     lines.append(f'    {job_id_safe} --> {cluster_id_safe}')
 
             # Connect job to workflow
@@ -397,7 +419,7 @@ def main():
     parser.add_argument(
         "-t", "--type", 
         help="Diagram generation type (default: mermaid). Options: mermaid, plantuml",
-        default="plantuml",
+        default="mermaid",
         choices=["mermaid", "plantuml"]
     )
     args = parser.parse_args()

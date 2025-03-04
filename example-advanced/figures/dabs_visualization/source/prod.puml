@@ -1,0 +1,33 @@
+@startuml
+!theme plain
+package "mlops_stacks - prod (mode: production)\n(host: https://adb-xxxx.xx.azuredatabricks.net)" {
+  package "Jobs" as Jobs_prod {
+    rectangle "prod-mlops_stacks-batch-inference-job\nnotify on_failure: first@company.com, second@company.com" as jobs_batch_inference_job_prod
+    package "Workflow" as Workflow_batch_inference_job_prod {
+      jobs_batch_inference_job_prod --> Workflow_batch_inference_job_prod : contains
+      package "batch_inference_job\n(notebook)" as task_batch_inference_job_batch_inference_job_prod {
+        rectangle "env\ninput_table_name\noutput_table_name\nmodel_name\ngit_source_info\n" as git_source_info_parameters_task_batch_inference_job_batch_inference_job_prod
+      }
+    }
+    rectangle "Cluster: batch_inference_job_cluster\n13.3.x-cpu-ml-scala2.12, m7g.xlarge, " as job_cluster_batch_inference_job_batch_inference_job_cluster_prod
+    jobs_batch_inference_job_prod --> job_cluster_batch_inference_job_batch_inference_job_cluster_prod : uses
+    rectangle "prod-mlops_stacks-model-training-job" as jobs_model_training_job_prod
+    package "Workflow" as Workflow_model_training_job_prod {
+      jobs_model_training_job_prod --> Workflow_model_training_job_prod : contains
+      package "Train\n(notebook)" as task_model_training_job_Train_prod {
+        rectangle "env\ntraining_data_path\nexperiment_name\nmodel_name\ngit_source_info\n" as git_source_info_parameters_task_model_training_job_Train_prod
+      }
+      package "ModelValidation\n(notebook)" as task_model_training_job_ModelValidation_prod {
+      task_model_training_job_Train_prod --> task_model_training_job_ModelValidation_prod : depends on
+        rectangle "experiment_name\nrun_mode\nenable_baseline_comparison\nvalidation_input\nmodel_type\ntargets\ncustom_metrics_loader_function\nvalidation_thresholds_loader_function\nevaluator_config_loader_function\ngit_source_info\n" as git_source_info_parameters_task_model_training_job_ModelValidation_prod
+      }
+      package "ModelDeployment\n(notebook)" as task_model_training_job_ModelDeployment_prod {
+      task_model_training_job_ModelValidation_prod --> task_model_training_job_ModelDeployment_prod : depends on
+        rectangle "env\ngit_source_info\n" as git_source_info_parameters_task_model_training_job_ModelDeployment_prod
+      }
+    }
+    rectangle "Cluster: model_training_job_cluster\n13.3.x-cpu-ml-scala2.12, Standard_D3_v2, " as job_cluster_model_training_job_model_training_job_cluster_prod
+    jobs_model_training_job_prod --> job_cluster_model_training_job_model_training_job_cluster_prod : uses
+  }
+}
+@enduml
