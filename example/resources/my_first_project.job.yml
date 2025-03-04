@@ -1,0 +1,49 @@
+# The main job for my_first_project.
+resources:
+  jobs:
+    my_first_project_job:
+      name: my_first_project_job
+
+      trigger:
+        # Run this job every day, exactly one day from the last run; see https://docs.databricks.com/api/workspace/jobs/create#trigger
+        periodic:
+          interval: 1
+          unit: DAYS
+
+      email_notifications:
+        on_failure:
+          - nicolaj.schmit@hotmail.com
+
+      tasks:
+        - task_key: notebook_task
+          job_cluster_key: job_cluster
+          notebook_task:
+            notebook_path: ../src/notebook.ipynb
+        
+        - task_key: main_task
+          depends_on:
+            - task_key: notebook_task
+          
+          job_cluster_key: job_cluster
+          python_wheel_task:
+            package_name: my_first_project
+            entry_point: main
+          libraries:
+            # By default we just include the .whl file generated for the my_first_project package.
+            # See https://docs.databricks.com/dev-tools/bundles/library-dependencies.html
+            # for more information on how to add other libraries.
+            - whl: ../dist/*.whl
+
+      job_clusters:
+      - job_cluster_key: job_cluster
+        new_cluster:
+          spark_version: 15.4.x-scala2.12
+          node_type_id: m7g.large
+          runtime_engine: STANDARD 
+          spark_conf:
+            spark.databricks.cluster.profile: singleNode
+            spark.master: local[*]
+          num_workers: 0
+          enable_elastic_disk: true
+          custom_tags:
+            ResourceClass: SingleNode

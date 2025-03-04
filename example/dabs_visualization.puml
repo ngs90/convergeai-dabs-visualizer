@@ -1,0 +1,53 @@
+@startuml
+!theme plain
+package "my_first_project" {
+  package "dev (mode: development)\n(host: https://dbc-7e190e2b-f93b.cloud.databricks.com)" {
+    package "Jobs" as Jobs_dev {
+      rectangle "second_job\ntrigger: periodic (2 MONTHS)\nnotify on_failure: nicolaj.schmit@hotmail.com, mail@domain.com\nnotify on_success: nicolaj.schmit@hotmail.com" as jobs_second_job_dev
+      package "Workflow" as Workflow_dev {
+        rectangle "notebook_task2\n(notebook)" as task_second_job_notebook_task2_dev
+        jobs_second_job_dev --> task_second_job_notebook_task2_dev : contains
+        rectangle "main_task2\n(python_wheel)" as task_second_job_main_task2_dev
+        jobs_second_job_dev --> task_second_job_main_task2_dev : contains
+        task_second_job_notebook_task2_dev --> task_second_job_main_task2_dev : depends on
+      }
+      rectangle "Cluster: job_cluster\n16.4.x-scala2.12, m7g.large, STANDARD" as job_cluster_second_job_job_cluster_dev
+      jobs_second_job_dev --> job_cluster_second_job_job_cluster_dev : uses
+      rectangle "my_first_project_job\ntrigger: periodic (1 DAYS)\nnotify on_failure: nicolaj.schmit@hotmail.com" as jobs_my_first_project_job_dev
+      package "Workflow" as Workflow_dev {
+        rectangle "notebook_task\n(notebook)" as task_my_first_project_job_notebook_task_dev
+        jobs_my_first_project_job_dev --> task_my_first_project_job_notebook_task_dev : contains
+        rectangle "main_task\n(python_wheel)" as task_my_first_project_job_main_task_dev
+        jobs_my_first_project_job_dev --> task_my_first_project_job_main_task_dev : contains
+        task_my_first_project_job_notebook_task_dev --> task_my_first_project_job_main_task_dev : depends on
+      }
+      rectangle "Cluster: job_cluster\n15.4.x-scala2.12, m7g.large, STANDARD" as job_cluster_my_first_project_job_job_cluster_dev
+      jobs_my_first_project_job_dev --> job_cluster_my_first_project_job_job_cluster_dev : uses
+    }
+  }
+  package "prod (mode: production)\n(host: https://dbc-7e190e2b-f93b.cloud.databricks.com)" {
+    package "Jobs" as Jobs_prod {
+      rectangle "second_job\ntrigger: periodic (2 MONTHS)\nnotify on_failure: nicolaj.schmit@hotmail.com, mail@domain.com\nnotify on_success: nicolaj.schmit@hotmail.com" as jobs_second_job_prod
+      package "Workflow" as Workflow_prod {
+        rectangle "notebook_task2\n(notebook)" as task_second_job_notebook_task2_prod
+        jobs_second_job_prod --> task_second_job_notebook_task2_prod : contains
+        rectangle "main_task2\n(python_wheel)" as task_second_job_main_task2_prod
+        jobs_second_job_prod --> task_second_job_main_task2_prod : contains
+        task_second_job_notebook_task2_prod --> task_second_job_main_task2_prod : depends on
+      }
+      rectangle "Cluster: job_cluster\n16.4.x-scala2.12, m7g.large, STANDARD" as job_cluster_second_job_job_cluster_prod
+      jobs_second_job_prod --> job_cluster_second_job_job_cluster_prod : uses
+      rectangle "my_first_project_job\ntrigger: periodic (1 DAYS)\nnotify on_failure: nicolaj.schmit@hotmail.com" as jobs_my_first_project_job_prod
+      package "Workflow" as Workflow_prod {
+        rectangle "notebook_task\n(notebook)" as task_my_first_project_job_notebook_task_prod
+        jobs_my_first_project_job_prod --> task_my_first_project_job_notebook_task_prod : contains
+        rectangle "main_task\n(python_wheel)" as task_my_first_project_job_main_task_prod
+        jobs_my_first_project_job_prod --> task_my_first_project_job_main_task_prod : contains
+        task_my_first_project_job_notebook_task_prod --> task_my_first_project_job_main_task_prod : depends on
+      }
+      rectangle "Cluster: job_cluster\n15.4.x-scala2.12, m7g.large, STANDARD" as job_cluster_my_first_project_job_job_cluster_prod
+      jobs_my_first_project_job_prod --> job_cluster_my_first_project_job_job_cluster_prod : uses
+    }
+  }
+}
+@enduml

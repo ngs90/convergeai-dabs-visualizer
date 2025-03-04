@@ -1,0 +1,9 @@
+[project]
+name = "convergeai-dabs-visualizer"
+version = "0.1.0"
+description = "Databricks Asset Bundle VIsualizer"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0.2",
+]
