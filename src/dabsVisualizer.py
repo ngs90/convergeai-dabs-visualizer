@@ -187,10 +187,10 @@ def build_plantuml_for_target(bundle_name, resources, target_name, target_data):
     lines.append("}")  # end top-level package for this environment
     lines.append("@enduml")
     return "\n".join(lines)
-
 def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
     """
-    Builds a Mermaid diagram (as text) for a single environment/target.
+    Builds a Mermaid diagram (as text) for a single environment/target,
+    mimicking the structure of the provided PlantUML diagram.
     """
     target_mode = target_data.get("mode", "unknown")
     workspace = target_data.get("workspace", {})
@@ -199,43 +199,59 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
     # Start the Mermaid diagram
     lines = []
     lines.append("---")
-    lines.append("title: " + f"{bundle_name} - {target_name} (mode: {target_mode})")
+    lines.append(f"title {bundle_name} ({target_name} mode {target_mode})")
+    lines.append(f"host {workspace_host}")
     lines.append("---")
-    lines.append("graph TD")
-
+    lines.append("flowchart LR")
+    lines.append("    classDef default fill:#f9f,stroke:#333,stroke-width:2px;")
+    lines.append("")
+    
+    # Create the main container for the environment
+    lines.append(f"    subgraph {target_name}[\" \"]")
+    lines.append("    direction LR")
+    lines.append("")
+    
+    # Jobs subgraph
+    lines.append("    subgraph Jobs")
+    lines.append("    direction LR")
+    
     if "jobs" in resources:
         for job_id, job_data in resources["jobs"].items():
             job_name = job_data.get("name", job_id)
+            job_id_safe = job_id.replace("-", "_")
 
-            # Trigger info
+            # Trigger and notification information
             trigger_str = ""
             trigger_def = job_data.get("trigger", {})
             if "periodic" in trigger_def:
                 interval = trigger_def["periodic"].get("interval", "")
                 unit = trigger_def["periodic"].get("unit", "")
-                trigger_str = f"\\nTrigger: {interval} {unit}"
+                trigger_str = f"trigger: periodic ({interval} {unit})"
 
             # Notifications
             email_notifications = job_data.get("email_notifications", {})
             notify_str = ""
             for notif_type, recipients in email_notifications.items():
-                notify_str += f"\\nNotify {notif_type}: {', '.join(recipients)}"
+                notify_str += f"\\nnotify {notif_type}: {', '.join(recipients)}"
 
-            job_label = f"{job_name}{trigger_str}{notify_str}"
-            job_id_safe = job_id.replace("-", "_")
+            # Job node
+            job_label = f"{job_name}\\n{trigger_str}{notify_str}"
+            lines.append(f'    {job_id_safe}["{job_label}"]')
 
-            # Create job node
-            lines.append(f'    job_{job_id_safe}["{job_label}"]')
+            # Workflow subgraph
+            lines.append(f"    subgraph Workflow_{job_id_safe}[Workflow]")
+            lines.append("    direction LR")
 
-            # Show tasks
+            # Tasks
             tasks = job_data.get("tasks", [])
+            task_nodes = []
             for task in tasks:
                 task_key = task.get("task_key")
                 if not task_key:
                     continue
                 task_key_safe = task_key.replace("-", "_")
 
-                # Task type
+                # Determine task type
                 if "notebook_task" in task:
                     task_label = f"{task_key} (notebook)"
                 elif "python_wheel_task" in task:
@@ -243,28 +259,34 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
                 else:
                     task_label = task_key
 
-                # Create task node
-                lines.append(f'    task_{job_id_safe}_{task_key_safe}["{task_label}"]')
+                # Task node
+                task_nodes.append(task_key_safe)
+                lines.append(f'    {task_key_safe}["{task_label}"]')
 
-                # Link job to task
-                lines.append(f'    job_{job_id_safe} --> task_{job_id_safe}_{task_key_safe}')
+                # Base parameters
+                base_parameters = task.get("notebook_task", {}).get("base_parameters", {})
+                if base_parameters:
+                    param_str = "\\n".join(base_parameters.keys())
+                    lines.append(f'    {task_key_safe}_params["{param_str}"]')
+                    lines.append(f'    {task_key_safe} --> {task_key_safe}_params')
 
-                # Handle task dependencies
+            # Task dependencies
+            for task in tasks:
+                task_key = task.get("task_key")
+                if not task_key:
+                    continue
+                task_key_safe = task_key.replace("-", "_")
+                
                 depends_on = task.get("depends_on", [])
                 for dep_item in depends_on:
                     dep_key = dep_item.get("task_key")
                     if dep_key:
                         dep_key_safe = dep_key.replace("-", "_")
-                        lines.append(f'    task_{job_id_safe}_{dep_key_safe} --> task_{job_id_safe}_{task_key_safe}')
+                        lines.append(f'    {dep_key_safe} --> {task_key_safe}')
 
-                # Add base parameters as a node
-                base_parameters = task.get("notebook_task", {}).get("base_parameters", {})
-                if base_parameters:
-                    param_vals = "\\n".join([f"{param}" for param in base_parameters.keys()])
-                    lines.append(f'    params_{job_id_safe}_{task_key_safe}["{param_vals}"]')
-                    lines.append(f'    task_{job_id_safe}_{task_key_safe} --> params_{job_id_safe}_{task_key_safe}')
+            lines.append("    end")  # End Workflow subgraph
 
-            # Show job clusters
+            # Job Clusters
             job_clusters = job_data.get("job_clusters", [])
             for cluster in job_clusters:
                 cluster_key = cluster.get("job_cluster_key")
@@ -273,13 +295,22 @@ def build_mermaid_for_target(bundle_name, resources, target_name, target_data):
                     spark_version = new_cluster.get("spark_version", "")
                     node_type_id = new_cluster.get("node_type_id", "")
                     runtime_engine = new_cluster.get("runtime_engine", "")
+                    
                     cluster_label = (
                         f"Cluster: {cluster_key}\\n"
                         f"{spark_version}, {node_type_id}, {runtime_engine}"
                     )
-                    lines.append(f'    cluster_{job_id_safe}["{cluster_label}"]')
-                    lines.append(f'    job_{job_id_safe} --> cluster_{job_id_safe}')
+                    cluster_id_safe = f"cluster_{job_id_safe}"
+                    lines.append(f'    {cluster_id_safe}["{cluster_label}"]')
+                    lines.append(f'    {job_id_safe} --> {cluster_id_safe}')
 
+            # Connect job to workflow
+            lines.append(f'    {job_id_safe} --> Workflow_{job_id_safe}')
+
+        lines.append("    end")  # End Jobs subgraph
+    
+    lines.append("    end")  # End target environment subgraph
+    
     return "\n".join(lines)
 
 def run_plantuml(puml_content, output_file):
@@ -326,8 +357,11 @@ def run_mermaid(mermaid_content, output_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=".mmd") as tmp:
         tmp_name = tmp.name
         tmp.write(mermaid_content.encode("utf-8"))
+        print(tmp_name)
+        print(os.path.abspath(output_file))
     
-    try:
+#     try:
+    if True:
         result = subprocess.run(
             ["mmdc", "-i", tmp_name, "-o", os.path.abspath(output_file), "-t", "dark"],
             capture_output=True,
@@ -340,11 +374,11 @@ def run_mermaid(mermaid_content, output_file):
             return
 
         print(f"[INFO] PNG generated at: {os.path.abspath(output_file)}")
-    except Exception as e:
-        print(f"[ERROR] Exception during Mermaid CLI execution: {e}")
-    finally:
-        if os.path.exists(tmp_name):
-            os.remove(tmp_name)
+    # except Exception as e:
+    #     print(f"[ERROR] Exception during Mermaid CLI execution: {e}")
+    # finally:
+    #     if os.path.exists(tmp_name):
+    #         os.remove(tmp_name)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -363,7 +397,7 @@ def main():
     parser.add_argument(
         "-t", "--type", 
         help="Diagram generation type (default: mermaid). Options: mermaid, plantuml",
-        default="mermaid",
+        default="plantuml",
         choices=["mermaid", "plantuml"]
     )
     args = parser.parse_args()
@@ -400,7 +434,7 @@ def main():
             diagram_content = build_plantuml_for_target(bundle_name, resources_resolved, target_name, target_data_resolved)
             file_ext = "puml"
             render_func = run_plantuml
-        else:  # mermaid (default)
+        elif args.type == "mermaid":
             diagram_content = build_mermaid_for_target(bundle_name, resources_resolved, target_name, target_data_resolved)
             file_ext = "mmd"
             render_func = run_mermaid
