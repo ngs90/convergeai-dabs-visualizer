@@ -10,7 +10,7 @@ Databricks Asset Bundle Visualizer
 
 
 # mermaid example 
-```
+```mermaid 
 stateDiagram
     state "Todo" as TODO
     state "In Progress" as IP
